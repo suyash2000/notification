@@ -139,26 +139,34 @@ public class NotificationServiceImpl implements NotificationService {
 //    }
 
     @Override
-    public Object createNotification(JsonNode notificationDetails) {
-        String notificationId = notificationDetails.get("notificationId").asText();
-
+    public Object consumeNotification(JsonNode notificationRequest) {
         try {
-            // Send the email notification
-            // TODO add if  for type = Email
-            emailService.sendNotificationEmail(notificationDetails.toString());
-            // Check if the document exists
-            GetRequest getRequest = new GetRequest("notifications", notificationId);
-            boolean exists = restHighLevelClient.exists(getRequest, RequestOptions.DEFAULT);
-            // If the document doesn't exist, create it
-            if (!exists) {
-                createNotificationDocument(notificationId, notificationDetails);
+            // Extract notification details from the updated JSON structure
+            JsonNode notifications = notificationRequest.path("request").path("notifications").get(0);
+            String notificationId = UUID.randomUUID().toString(); // Generate a new ID
+            String status = notifications.path("status").asText();
+
+            // Send email if the type is email
+            if (notifications.path("type").asText().equalsIgnoreCase("email")) {
+                emailService.sendNotificationEmail(notifications);
             }
-            // Update the status to "sent" in Elasticsearch
-            updateNotificationStatus(notificationId, "sent");
+
+            // Create or update the notification document in Elasticsearch
+            if (!isNotificationExists(notificationId)) {
+                createNotificationDocument(notificationId, notifications);
+            }
+
+            // Update the notification status
+            updateNotificationStatus(notificationId, "success"); // Ensure status is updated here
+
             // Retrieve the updated document from Elasticsearch
+            GetRequest getRequest = new GetRequest(INDEX_NAME, notificationId);
             GetResponse getResponse = restHighLevelClient.get(getRequest, RequestOptions.DEFAULT);
             if (getResponse.isExists()) {
-                return getResponse.getSource();
+                Map<String, Object> source = getResponse.getSourceAsMap();
+                source.put("status", "success"); // Ensure status is included in the response
+                log.info("Notification response: " + source);
+                return source;
             } else {
                 log.error("Notification with ID {} not found in Elasticsearch", notificationId);
                 return null;
@@ -169,12 +177,19 @@ public class NotificationServiceImpl implements NotificationService {
         }
     }
 
+
+    private boolean isNotificationExists(String notificationId) throws IOException {
+        GetRequest getRequest = new GetRequest(INDEX_NAME, notificationId);
+        return restHighLevelClient.exists(getRequest, RequestOptions.DEFAULT);
+    }
+
     private void updateNotificationStatus(String notificationId, String status) {
         try {
-            UpdateRequest updateRequest = new UpdateRequest("notifications", notificationId)
+            UpdateRequest updateRequest = new UpdateRequest(INDEX_NAME, notificationId)
                     .doc("status", status);
-            restHighLevelClient.update(updateRequest, RequestOptions.DEFAULT);
-            log.info("Notification status updated to: " + status);
+            UpdateResponse updateResponse = restHighLevelClient.update(updateRequest, RequestOptions.DEFAULT);
+            log.info("Update Request: " + updateRequest);
+            log.info("Notification status updated to: " + status + ". Result: " + updateResponse.getResult());
         } catch (IOException e) {
             log.error("Error updating notification status in Elasticsearch: ", e);
         }
@@ -182,11 +197,11 @@ public class NotificationServiceImpl implements NotificationService {
 
     private void createNotificationDocument(String notificationId, JsonNode notificationDetails) {
         try {
-            IndexRequest indexRequest = new IndexRequest("notifications")
+            IndexRequest indexRequest = new IndexRequest(INDEX_NAME)
                     .id(notificationId)
                     .source(notificationDetails.toString(), XContentType.JSON);
-            restHighLevelClient.index(indexRequest, RequestOptions.DEFAULT);
-            log.info("Notification document created with ID: " + notificationId);
+            IndexResponse indexResponse = restHighLevelClient.index(indexRequest, RequestOptions.DEFAULT);
+            log.info("Notification document created with ID: " + notificationId + ". Result: " + indexResponse.getResult());
         } catch (IOException e) {
             log.error("Error creating notification document in Elasticsearch: ", e);
         }

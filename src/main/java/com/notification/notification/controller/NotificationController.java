@@ -19,9 +19,9 @@ public class NotificationController {
     private NotificationService notificationService;
 
     // TODO change name to notification cusumers
-    @PostMapping("/create")
-    public ResponseEntity<Object> createNotification(@RequestBody JsonNode notificationDetails) {
-        Object response = notificationService.createNotification(notificationDetails);
+    @PostMapping("/consumer")
+    public ResponseEntity<Object> consumeNotification(@RequestBody JsonNode notificationDetails) {
+        Object response = notificationService.consumeNotification(notificationDetails);
         if (response != null) {
             return ResponseEntity.ok(response);
         } else {

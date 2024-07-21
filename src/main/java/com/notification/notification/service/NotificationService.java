@@ -6,7 +6,7 @@ import com.notification.notification.entity.NotificationSearchEntity;
 
 
 public interface NotificationService {
-  Object createNotification(JsonNode notificationDetails);
+  Object consumeNotification(JsonNode notificationDetails);
 
   NotificationSearchResultDTO searchNotifications(NotificationSearchEntity notificationSearchEntity) throws Exception;
 }
