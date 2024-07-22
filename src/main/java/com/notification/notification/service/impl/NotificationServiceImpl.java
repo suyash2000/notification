@@ -6,6 +6,7 @@ import com.notification.notification.configuration.ElasticsearchConfig;
 import com.notification.notification.dto.NotificationSearchResultDTO;
 import com.notification.notification.entity.NotificationSearchEntity;
 import com.notification.notification.kafka.NotificationConsumer;
+import com.notification.notification.kafka.NotificationProducer;
 import com.notification.notification.service.EmailService;
 import com.notification.notification.service.NotificationService;
 import org.apache.commons.lang3.StringUtils;
@@ -58,123 +59,54 @@ public class NotificationServiceImpl implements NotificationService {
     private EmailService emailService;
 
     @Autowired
+    private NotificationProducer notificationProducer;
+
+    @Autowired
     private NotificationConsumer notificationConsumer;
-
-//    @Override
-//    public JsonNode createNotification(JsonNode notificationDetails) {
-//        log.info("Creating notification");
-//
-//        try {
-//            if (notificationDetails != null) {
-//                String id = notificationDetails.has("notificationId") ? notificationDetails.get("notificationId").asText() : UUID.randomUUID().toString();
-//                Map<String, Object> notificationMap = new HashMap<>();
-//
-//                // Convert JsonNode to Map
-//                notificationDetails.fields().forEachRemaining(entry -> notificationMap.put(entry.getKey(), entry.getValue().asText()));
-//
-//                // Set default status to "pending" if not provided
-//                notificationMap.putIfAbsent("status", "pending");
-//
-//                IndexRequest indexRequest = new IndexRequest(INDEX_NAME)
-//                        .id(id)
-//                        .source(notificationMap);
-//
-//                IndexResponse indexResponse = restHighLevelClient.index(indexRequest, RequestOptions.DEFAULT);
-//
-//                log.info("Notification created with ID: " + id);
-//
-//                // Retrieve and return the notification details
-//                return getNotificationById(id);
-//            } else {
-//                log.info("Missing JSON data.");
-//            }
-//        } catch (IOException e) {
-//            log.error("Error occurred: ", e);
-//        }
-//        return null;
-//    }
-
-//    public void updateNotificationStatus(String notificationId, String newStatus) {
-//        log.info("Updating notification status");
-//
-//        try {
-//            UpdateRequest updateRequest = new UpdateRequest(INDEX_NAME, notificationId)
-//                    .doc("status", newStatus);
-//
-//            UpdateResponse updateResponse = restHighLevelClient.update(updateRequest, RequestOptions.DEFAULT);
-//
-//            log.info("Notification status updated to " + newStatus);
-//        } catch (IOException e) {
-//            log.error("Error occurred while updating status: ", e);
-//        }
-//    }
-
-//    private JsonNode getNotificationById(String notificationId) throws IOException {
-//        GetResponse getResponse = restHighLevelClient.get(new GetRequest(INDEX_NAME, notificationId), RequestOptions.DEFAULT);
-//
-//        if (getResponse.isExists()) {
-//            Map<String, Object> sourceAsMap = getResponse.getSourceAsMap();
-//            return objectMapper.convertValue(sourceAsMap, JsonNode.class);
-//        } else {
-//            log.info("Notification with ID: " + notificationId + " not found.");
-//            return null;
-//        }
-//    }
-
-//    @Override
-//    public Object createNotification(JsonNode notificationDetails) {
-//        // Extract details from the notificationDetails JSON node
-//        String notificationId = notificationDetails.get("notificationId").asText();
-//
-//        // Send the email notification
-//        emailService.sendNotificationEmail(notificationDetails.toString());
-//
-//        // Index the notification in Elasticsearch (optional)
-//        try {
-//            IndexRequest indexRequest = new IndexRequest("notifications")
-//                    .id(notificationId)
-//                    .source(notificationDetails.toString(), XContentType.JSON);
-//            IndexResponse indexResponse = restHighLevelClient.index(indexRequest, RequestOptions.DEFAULT);
-//            return indexResponse.getResult();
-//        } catch (IOException e) {
-//            log.error("Error indexing notification in Elasticsearch: ", e);
-//            return null;
-//        }
-//    }
 
     @Override
     public Object createNotification(JsonNode notificationDetails) {
         String notificationId = notificationDetails.get("notificationId").asText();
 
         try {
+            // Validate the notification details
+            if (!isValidNotification(notificationDetails)) {
+                log.error("Invalid notification: {}", notificationDetails);
+                return buildErrorResponse("Invalid notification details");
+            }
 
-            notificationConsumer.consume(notificationDetails);
+            // Send the notification details to Kafka
+            notificationProducer.sendMessage(notificationDetails.toString());
+
             // Check if the document exists
-            GetRequest getRequest = new GetRequest("notifications", notificationId);
+            GetRequest getRequest = new GetRequest(INDEX_NAME, notificationId);
             boolean exists = restHighLevelClient.exists(getRequest, RequestOptions.DEFAULT);
+
             // If the document doesn't exist, create it
             if (!exists) {
                 createNotificationDocument(notificationId, notificationDetails);
             }
+
             // Update the status to "sent" in Elasticsearch
             updateNotificationStatus(notificationId, "sent");
+
             // Retrieve the updated document from Elasticsearch
             GetResponse getResponse = restHighLevelClient.get(getRequest, RequestOptions.DEFAULT);
             if (getResponse.isExists()) {
                 return getResponse.getSource();
             } else {
                 log.error("Notification with ID {} not found in Elasticsearch", notificationId);
-                return null;
+                return buildErrorResponse("Notification not found");
             }
         } catch (Exception e) {
             log.error("Error processing notification: ", e);
-            return null;
+            return buildErrorResponse("Error processing notification");
         }
     }
 
     private void updateNotificationStatus(String notificationId, String status) {
         try {
-            UpdateRequest updateRequest = new UpdateRequest("notifications", notificationId)
+            UpdateRequest updateRequest = new UpdateRequest(INDEX_NAME, notificationId)
                     .doc("status", status);
             restHighLevelClient.update(updateRequest, RequestOptions.DEFAULT);
             log.info("Notification status updated to: " + status);
@@ -185,7 +117,7 @@ public class NotificationServiceImpl implements NotificationService {
 
     private void createNotificationDocument(String notificationId, JsonNode notificationDetails) {
         try {
-            IndexRequest indexRequest = new IndexRequest("notifications")
+            IndexRequest indexRequest = new IndexRequest(INDEX_NAME)
                     .id(notificationId)
                     .source(notificationDetails.toString(), XContentType.JSON);
             restHighLevelClient.index(indexRequest, RequestOptions.DEFAULT);
@@ -193,6 +125,29 @@ public class NotificationServiceImpl implements NotificationService {
         } catch (IOException e) {
             log.error("Error creating notification document in Elasticsearch: ", e);
         }
+    }
+
+    private boolean isValidNotification(JsonNode notification) {
+        // Implement validation logic, e.g., check required fields
+        if (!notification.has("notificationId") || !notification.has("type")) {
+            return false;
+        }
+
+        String type = notification.get("type").asText();
+        if ("email".equalsIgnoreCase(type) && !notification.has("email")) {
+            return false;
+        } else if ("mobile".equalsIgnoreCase(type) && !notification.has("mobileNumber")) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private Map<String, String> buildErrorResponse(String message) {
+        Map<String, String> response = new HashMap<>();
+        response.put("status", "failed");
+        response.put("message", message);
+        return response;
     }
 
     public NotificationSearchResultDTO searchNotifications(NotificationSearchEntity notificationSearchEntity) throws Exception {
