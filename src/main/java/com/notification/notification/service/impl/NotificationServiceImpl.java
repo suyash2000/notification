@@ -132,8 +132,10 @@ public class NotificationServiceImpl implements NotificationService {
         if (!notification.has("notificationId") || !notification.has("type")) {
             return false;
         }
-
         String type = notification.get("type").asText();
+        if (type.isEmpty() || (!"email".equalsIgnoreCase(type) && !"mobile".equalsIgnoreCase(type))) {
+            return false;
+        }
         if ("email".equalsIgnoreCase(type) && !notification.has("email")) {
             return false;
         } else if ("mobile".equalsIgnoreCase(type) && !notification.has("mobileNumber")) {
