@@ -19,7 +19,7 @@ public class NotificationController {
     private NotificationService notificationService;
 
     // TODO change name to notification cusumers
-    @PostMapping("/create")
+    @PostMapping("/notify")
     public ResponseEntity<Object> createNotification(@RequestBody JsonNode notificationDetails) {
         Object response = notificationService.createNotification(notificationDetails);
         if (response != null) {
@@ -35,8 +35,6 @@ public class NotificationController {
             NotificationSearchResultDTO result = notificationService.searchNotifications(notificationSearchEntity);
             return ResponseEntity.ok(result);
         } catch (Exception e) {
-            // Log the exception and return an appropriate error response
-            // For a real-world application, you might want to use a more sophisticated error handling strategy
             return ResponseEntity.status(500).body(null);
         }
     }

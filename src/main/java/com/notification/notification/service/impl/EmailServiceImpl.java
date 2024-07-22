@@ -29,16 +29,15 @@ public class EmailServiceImpl implements EmailService {
 
             String recipient = jsonNode.get("email").asText();
             String messageBody = jsonNode.get("message").asText();
-            String subject = jsonNode.get("title").asText();
+            String subject = jsonNode.get("subject").asText();
 
             SimpleMailMessage message = new SimpleMailMessage();
-            message.setFrom(fromEmail); // Set the sender email from properties
             message.setTo(recipient);
             message.setSubject(subject);
             message.setText(messageBody);
 
             // Log the email details for debugging
-            log.info("Email in send from : " + fromEmail + " to " + recipient + " subject " + subject);
+            log.info("Email is sent to " + recipient + " subject " + subject);
             javaMailSender.send(message);
 
         } catch (Exception e) {

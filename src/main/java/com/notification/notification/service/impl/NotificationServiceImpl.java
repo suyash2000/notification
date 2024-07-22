@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.notification.notification.configuration.ElasticsearchConfig;
 import com.notification.notification.dto.NotificationSearchResultDTO;
 import com.notification.notification.entity.NotificationSearchEntity;
+import com.notification.notification.kafka.NotificationConsumer;
 import com.notification.notification.service.EmailService;
 import com.notification.notification.service.NotificationService;
 import org.apache.commons.lang3.StringUtils;
@@ -55,6 +56,9 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Autowired
     private EmailService emailService;
+
+    @Autowired
+    private NotificationConsumer notificationConsumer;
 
 //    @Override
 //    public JsonNode createNotification(JsonNode notificationDetails) {
@@ -143,9 +147,8 @@ public class NotificationServiceImpl implements NotificationService {
         String notificationId = notificationDetails.get("notificationId").asText();
 
         try {
-            // Send the email notification
-            // TODO add if  for type = Email
-            emailService.sendNotificationEmail(notificationDetails.toString());
+
+            notificationConsumer.consume(notificationDetails);
             // Check if the document exists
             GetRequest getRequest = new GetRequest("notifications", notificationId);
             boolean exists = restHighLevelClient.exists(getRequest, RequestOptions.DEFAULT);

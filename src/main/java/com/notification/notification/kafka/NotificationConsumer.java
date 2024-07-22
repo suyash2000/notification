@@ -1,5 +1,6 @@
 package com.notification.notification.kafka;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.notification.notification.service.EmailService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -12,8 +13,8 @@ public class NotificationConsumer {
  private EmailService emailService;
 
   @KafkaListener(topics = "send.notification", groupId = "notification_group")
-  public void consume(String message) {
+  public void consume(JsonNode notificationDetails) {
      // Assume message is JSON string containing notification details
-      emailService.sendNotificationEmail(message);
+      emailService.sendNotificationEmail(String.valueOf(notificationDetails));
    }
 }
